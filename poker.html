@@ -500,45 +500,98 @@
             }
         }
 
-        // CPU AI 逻辑
-        function cpuDecision() {
-            // 简单评估
-            const evalRes = evaluate(cpuHand, communityCards);
-            const handScore = evalRes.score;
+    function cpuDecision() {
             const toCall = currentStreetBet - cpuRoundBet;
+            let action = 'fold'; // 默认弃牌，除非满足条件
+            
+            // 获取牌力分析
+            const evalRes = evaluate(cpuHand, communityCards);
+            const score = evalRes.score;
 
-            let action = 'fold';
+            // --- 阶段 1: 翻牌前 (Preflop) 逻辑 ---
+            if (gameState === 'PREFLOP') {
+                const c1 = cpuHand[0];
+                const c2 = cpuHand[1];
+                const isPair = c1.rank === c2.rank;
+                const highVal = Math.max(c1.value, c2.value);
+                const sumVal = c1.value + c2.value;
+                const isSuited = c1.suit === c2.suit;
+                const isConnector = Math.abs(c1.value - c2.value) === 1;
 
-            // 1. 决策逻辑
-            if (currentStreetBet === cpuRoundBet) {
-                // 没人加注，CPU 至少会 Check
-                // 如果牌好 (>200 两对以上)，可能 Raise
-                if (handScore > 200 && Math.random() > 0.7) action = 'raise';
-                else action = 'check'; 
+                // 基础跟注概率 (翻牌前大家比较松)
+                let chance = 0.1; 
+
+                // 1. 对子：几乎必玩
+                if (isPair) chance = 1.0;
+                // 2. 大牌：有一张Q, K, A，或者两张加起来很大
+                else if (highVal >= 12) chance = 0.85; // 有QKA
+                else if (sumVal >= 20) chance = 0.6;   // 如 J + 9
+                // 3. 同花/连张：潜力牌
+                else {
+                    if (isSuited) chance += 0.3;
+                    if (isConnector) chance += 0.2;
+                }
+
+                // 4. 便宜的时候多看牌 (如果跟注额 < 3倍大盲，放宽要求)
+                if (toCall <= BLIND * 3) chance += 0.4;
+
+                // 决策
+                if (Math.random() < chance) action = 'call';
+
+                // 强牌加注 (对子 > 8, 或者 AK/AQ)
+                if ((isPair && c1.value > 8) || (sumVal > 26)) {
+                    if (Math.random() > 0.3) action = 'raise';
+                }
+
             } else {
-                // 面对加注
-                // 几率计算：分数越高越可能跟注
-                // 高牌(0-100): 10% 跟注
-                // 一对(100-200): 50% 跟注
-                // 两对+(>200): 90% 跟注
-                let callChance = 0;
-                if (handScore < 100) callChance = 0.1;
-                else if (handScore < 200) callChance = 0.4; // 对子
-                else callChance = 0.9;
+                // --- 阶段 2: 翻牌后 (Postflop) 逻辑 ---
+                
+                let chance = 0;
 
-                // 诈唬几率
-                if (Math.random() < 0.1) callChance = 1; 
+                // 1. 根据牌型打分
+                if (score >= 200) chance = 1.0;      // 两对及以上：必跟
+                else if (score >= 100) chance = 0.75; // 对子：75% 跟
+                else {
+                    // 高牌 (没有对子)
+                    // 如果手里的牌很大(A或K)，或者有听牌面(简化逻辑)，给点机会
+                    if (evalRes.highCard >= 13) chance = 0.25; 
+                    else chance = 0.05;
+                }
 
-                if (Math.random() < callChance) {
-                    action = 'call';
-                    // 极好的牌反加注
-                    if (handScore > 400 && Math.random() > 0.5) action = 'raise';
+                // 2. 关键：底池赔率 (Pot Odds)
+                // 如果底池很大，而跟注很少，即使是垃圾牌也值得搏一搏
+                // 例如：底池$200，你需要跟$10。赔率极好，AI应该跟注。
+                let potRatio = 0;
+                if (pot > 0) potRatio = toCall / pot;
+                
+                // 只有当需要跟注时才考虑赔率
+                if (toCall > 0) {
+                    if (potRatio < 0.1) chance += 0.6;      // 极其便宜 (<10%底池): 多跟
+                    else if (potRatio < 0.3) chance += 0.3; // 比较便宜 (<30%底池): 稍微多跟
                 } else {
-                    action = 'fold';
+                    // 没人下注 (toCall == 0)，那肯定 Check，不弃牌
+                    action = 'check'; 
+                    // 偷鸡逻辑：如果是高牌但处于后手，偶尔偷一把
+                    if (score < 100 && Math.random() < 0.2) action = 'raise';
+                }
+
+                // 3. 诈唬 (Bluff) - 15% 几率无视牌力瞎玩
+                if (Math.random() < 0.15) chance = 1.0;
+
+                // 最终执行
+                if (action !== 'check' && Math.random() < chance) {
+                    action = 'call';
+                    // 牌特别好时加注
+                    if (score >= 300 && Math.random() > 0.4) action = 'raise';
                 }
             }
 
-            // 2. 执行动作
+            // --- 兜底逻辑 ---
+            
+            // 如果不需要跟注，绝不弃牌，改为 Check
+            if (toCall === 0 && action === 'fold') action = 'check';
+
+            // 执行动作
             if (action === 'fold') {
                 handleFold('cpu');
                 return;
@@ -561,19 +614,22 @@
             }
 
             if (action === 'raise') {
-                // 简易加注策略：加注底池的 50% 或 最小加注
-                let raiseAmt = toCall + BLIND * 2;
-                if (raiseAmt > cpuChips) raiseAmt = cpuChips;
+                // 智能加注额：底池的 50% + 跟注额
+                let raiseAmt = toCall + Math.floor(pot * 0.5);
+                // 限制最小加注为大盲
+                if (raiseAmt < toCall + BLIND) raiseAmt = toCall + BLIND;
+                
+                if (raiseAmt > cpuChips) raiseAmt = cpuChips; // All in
                 
                 cpuChips -= raiseAmt;
                 cpuRoundBet += raiseAmt;
                 pot += raiseAmt;
-                currentStreetBet = cpuRoundBet; // 提高标杆
+                currentStreetBet = cpuRoundBet;
                 showBubble('cpu', `Raise to ${cpuRoundBet}`);
             }
 
             updateUI();
-            checkRoundComplete(); // 检查是否回到玩家
+            checkRoundComplete(); 
         }
 
         function nextStreet() {
