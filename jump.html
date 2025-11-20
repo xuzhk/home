@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简易跳跃小游戏</title>
+    <style>
+        * {
+            padding: 0;
+            margin: 0;
+            box-sizing: border-box;
+            user-select: none; /* 禁止选中文字 */
+        }
+
+        body {
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+
+        /* 游戏容器 */
+        .game-container {
+            width: 600px;
+            height: 200px;
+            border: 2px solid #333;
+            background-color: #fff;
+            position: relative; /* 子元素绝对定位的基准 */
+            overflow: hidden; /* 隐藏跑到框外面的障碍物 */
+        }
+
+        /* 玩家 (红色方块) */
+        #player {
+            width: 50px;
+            height: 50px;
+            background-color: #ff5252;
+            position: absolute;
+            bottom: 0;
+            left: 50px;
+        }
+
+        /* 障碍物 (蓝色方块) */
+        #obstacle {
+            width: 30px;
+            height: 40px;
+            background-color: #448aff;
+            position: absolute;
+            bottom: 0;
+            left: 600px; /* 初始在容器最右侧外面 */
+        }
+
+        /* 分数显示 */
+        #score {
+            font-size: 24px;
+            margin-top: 20px;
+        }
+
+        /* 提示文字 */
+        .instruction {
+            margin-bottom: 10px;
+            color: #666;
+        }
+
+        /* --- 动画定义 --- */
+
+        /* 障碍物移动动画 */
+        .obstacle-animate {
+            animation: moveLeft 1.5s infinite linear;
+        }
+
+        @keyframes moveLeft {
+            0% {
+                left: 600px;
+            }
+            100% {
+                left: -40px;
+            }
+        }
+
+        /* 玩家跳跃动画 */
+        .player-jump {
+            animation: jump 500ms linear;
+        }
+
+        @keyframes jump {
+            0% { bottom: 0; }
+            30% { bottom: 100px; } /* 跳跃高度 */
+            70% { bottom: 100px; } /* 滞空一小会儿 */
+            100% { bottom: 0; }
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="instruction">按 [空格键] 或 [点击游戏区域] 跳跃</div>
+    
+    <div class="game-container" id="gameArea" onclick="jump()">
+        <div id="player"></div>
+        <div id="obstacle"></div>
+    </div>
+
+    <div id="score">得分: 0</div>
+
+    <script>
+        const player = document.getElementById("player");
+        const obstacle = document.getElementById("obstacle");
+        const scoreText = document.getElementById("score");
+        
+        let score = 0;
+        let isGameOver = false;
+        let scoreInterval;
+
+        // 游戏开始：给障碍物添加动画类
+        function startGame() {
+            obstacle.classList.add("obstacle-animate");
+            score = 0;
+            isGameOver = false;
+            scoreText.innerText = "得分: " + score;
+            
+            // 开始计分
+            scoreInterval = setInterval(() => {
+                score++;
+                scoreText.innerText = "得分: " + score;
+            }, 100);
+        }
+
+        // 跳跃逻辑
+        function jump() {
+            // 如果已经在跳跃中，或者游戏结束，则忽略
+            if (player.classList.contains("player-jump") || isGameOver) {
+                return;
+            }
+            
+            // 如果还没开始游戏（障碍物没动），先开始游戏
+            if (!obstacle.classList.contains("obstacle-animate")) {
+                startGame();
+            }
+
+            player.classList.add("player-jump");
+
+            // 500ms 后移除跳跃类，以便下次可以再跳（对应CSS动画时长）
+            setTimeout(function() {
+                player.classList.remove("player-jump");
+            }, 500);
+        }
+
+        // 键盘监听
+        document.addEventListener('keydown', function(event) {
+            if (event.code === 'Space' || event.code === 'ArrowUp') {
+                jump();
+            }
+        });
+
+        // 碰撞检测循环 (每10毫秒检查一次)
+        const checkDead = setInterval(function() {
+            if (!obstacle.classList.contains("obstacle-animate")) return;
+
+            // 获取玩家当前的顶部位置 (用于计算是否跳起来了)
+            // 注意：我们在CSS用了bottom，但getComputedStyle通常返回top值，
+            // 这里我们简单点，直接获取 offsetTop 或者通过 bottom 计算
+            // 因为CSS动画改变的是 bottom，我们需要获取实时的 bottom 值
+            // window.getComputedStyle(player).getPropertyValue("bottom") 返回的是 "0px", "50px" 等
+            
+            let playerBottom = parseInt(window.getComputedStyle(player).getPropertyValue("bottom"));
+            let obstacleLeft = parseInt(window.getComputedStyle(obstacle).getPropertyValue("left"));
+
+            // 碰撞逻辑：
+            // 1. 障碍物到达玩家水平位置：obstacleLeft 在 0 到 50 之间 (因为玩家宽50，且靠左50px放置，稍微放宽判定范围)
+            //    实际上玩家left是50，宽50，占据 50-100 的x轴。
+            //    障碍物从右往左，当 obstacleLeft < 100 (玩家右侧) 且 obstacleLeft > 0 (玩家左侧前) 时可能碰撞。
+            //    为了手感更好，我们将判定范围缩小一点：
+            
+            // 简化判定：障碍物进入玩家所在的X轴区域 (50px - 90px 左右)
+            if (obstacleLeft < 90 && obstacleLeft > 50) {
+                // 2. 玩家没有跳得足够高 (玩家高度50，障碍物高度40)
+                // 如果玩家底部距离地面小于40，说明撞上了
+                if (playerBottom < 40) {
+                    gameOver();
+                }
+            }
+        }, 10);
+
+        function gameOver() {
+            isGameOver = true;
+            
+            // 停止障碍物
+            obstacle.classList.remove("obstacle-animate");
+            
+            // 停止计分
+            clearInterval(scoreInterval);
+
+            alert("游戏结束！最终得分: " + score + "\n点击确定重新开始");
+            
+            // 重置
+            startGame();
+        }
+
+        // 初始化启动
+        startGame();
+
+    </script>
+</body>
+</html>
