@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>经典贪吃蛇 HTML5版</title>
+    <style>
+        /* CSS 样式部分 */
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #2c3e50;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+
+        #score-board {
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+
+        canvas {
+            border: 4px solid #ecf0f1;
+            border-radius: 4px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            background-color: #34495e;
+        }
+
+        #restart-btn {
+            margin-top: 20px;
+            padding: 10px 25px;
+            font-size: 18px;
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            display: none; /* 默认隐藏 */
+            transition: background 0.3s;
+        }
+
+        #restart-btn:hover {
+            background-color: #c0392b;
+        }
+
+        .controls-hint {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #bdc3c7;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🐍 贪吃蛇小游戏</h1>
+    <div id="score-board">得分: <span id="score">0</span></div>
+    
+    <!-- 游戏画布 -->
+    <canvas id="gameCanvas" width="400" height="400"></canvas>
+    
+    <button id="restart-btn" onclick="initGame()">重新开始</button>
+    
+    <div class="controls-hint">使用键盘 ⬆️ ⬇️ ⬅️ ➡️ 方向键控制移动</div>
+
+    <script>
+        // JavaScript 逻辑部分
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreElement = document.getElementById("score");
+        const restartBtn = document.getElementById("restart-btn");
+
+        // 游戏参数
+        const box = 20; // 每个格子的像素大小
+        const canvasSize = 400;
+        let snake = [];
+        let food = {};
+        let score = 0;
+        let d; // 方向
+        let game; // 游戏循环定时器
+
+        // 初始化游戏
+        function initGame() {
+            // 重置蛇的位置
+            snake = [];
+            snake[0] = { x: 9 * box, y: 10 * box };
+
+            // 重置分数
+            score = 0;
+            scoreElement.innerHTML = score;
+
+            // 重置方向（默认为空，等待按键）
+            d = null;
+
+            // 生成第一个食物
+            generateFood();
+
+            // 隐藏按钮
+            restartBtn.style.display = "none";
+
+            // 清除旧的定时器并开始新的
+            if(game) clearInterval(game);
+            game = setInterval(draw, 100); // 100ms 刷新一次，数值越小速度越快
+        }
+
+        // 监听键盘事件
+        document.addEventListener("keydown", direction);
+
+        function direction(event) {
+            let key = event.keyCode;
+            // 37: Left, 38: Up, 39: Right, 40: Down
+            // 防止掉头（例如正在向右走，不能直接按左）
+            if (key == 37 && d != "RIGHT") {
+                d = "LEFT";
+            } else if (key == 38 && d != "DOWN") {
+                d = "UP";
+            } else if (key == 39 && d != "LEFT") {
+                d = "RIGHT";
+            } else if (key == 40 && d != "UP") {
+                d = "DOWN";
+            }
+        }
+
+        // 生成随机食物
+        function generateFood() {
+            food = {
+                x: Math.floor(Math.random() * (canvasSize / box)) * box,
+                y: Math.floor(Math.random() * (canvasSize / box)) * box
+            };
+            // 检查食物是否生成在蛇身上，如果是则重新生成
+            for(let i=0; i<snake.length; i++){
+                if(food.x == snake[i].x && food.y == snake[i].y){
+                    generateFood();
+                    return;
+                }
+            }
+        }
+
+        // 碰撞检测函数
+        function collision(head, array) {
+            for (let i = 0; i < array.length; i++) {
+                if (head.x == array[i].x && head.y == array[i].y) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // 核心绘制函数（每一帧调用）
+        function draw() {
+            // 1. 清空画布
+            ctx.fillStyle = "#34495e"; // 背景色
+            ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+            // 2. 绘制蛇
+            for (let i = 0; i < snake.length; i++) {
+                // 蛇头是绿色，蛇身是白色
+                ctx.fillStyle = (i == 0) ? "#2ecc71" : "#ecf0f1";
+                ctx.fillRect(snake[i].x, snake[i].y, box, box);
+
+                // 绘制边框让蛇看起来有格子感
+                ctx.strokeStyle = "#34495e";
+                ctx.strokeRect(snake[i].x, snake[i].y, box, box);
+            }
+
+            // 3. 绘制食物
+            ctx.fillStyle = "#e74c3c";
+            ctx.fillRect(food.x, food.y, box, box);
+
+            // 4. 计算蛇头的新位置
+            let snakeX = snake[0].x;
+            let snakeY = snake[0].y;
+
+            if (d == "LEFT") snakeX -= box;
+            if (d == "UP") snakeY -= box;
+            if (d == "RIGHT") snakeX += box;
+            if (d == "DOWN") snakeY += box;
+
+            // 5. 如果蛇还没有动（刚开始），直接返回不更新逻辑
+            if(d == null) return;
+
+            // 6. 判断吃食物
+            if (snakeX == food.x && snakeY == food.y) {
+                score++;
+                scoreElement.innerHTML = score;
+                generateFood();
+                // 吃到了食物，不移除尾巴（蛇变长）
+            } else {
+                // 没吃到食物，移除尾巴（移动效果）
+                snake.pop();
+            }
+
+            // 7. 创建新蛇头
+            let newHead = {
+                x: snakeX,
+                y: snakeY
+            };
+
+            // 8. 游戏结束判断
+            // 撞墙 || 撞自己
+            if (snakeX < 0 || snakeX >= canvasSize || snakeY < 0 || snakeY >= canvasSize || collision(newHead, snake)) {
+                clearInterval(game); // 停止游戏循环
+                
+                // 绘制游戏结束文字
+                ctx.fillStyle = "white";
+                ctx.font = "50px Arial";
+                ctx.fillText("Game Over", 75, 200);
+                
+                restartBtn.style.display = "block"; // 显示重开按钮
+                return;
+            }
+
+            snake.unshift(newHead); // 将新头加入数组
+        }
+
+        // 启动游戏
+        initGame();
+
+    </script>
+</body>
+</html>
